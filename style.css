@@ -1,0 +1,42 @@
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background: #fdfdfd;
+  color: #111;
+}
+
+header {
+  background: #e6f0ff;
+  padding: 1em;
+  text-align: center;
+  border-bottom: 1px solid #ccc;
+}
+
+#countdowns, #eta {
+  margin-top: 0.5em;
+  font-weight: bold;
+}
+
+main {
+  padding: 1em;
+}
+
+.day-block {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-bottom: 1em;
+  padding: 1em;
+  background: white;
+}
+
+button {
+  display: block;
+  margin: 0.5em 0;
+  padding: 0.7em;
+  width: 100%;
+  border: none;
+  background: #0078D7;
+  color: white;
+  border-radius: 6px;
+  font-size: 1em;
+}
