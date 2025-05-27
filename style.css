@@ -1,42 +1,77 @@
 body {
+  font-family: 'Roboto', sans-serif;
+  background: #fafafa;
+  color: #202124;
   margin: 0;
-  font-family: sans-serif;
-  background: #fdfdfd;
-  color: #111;
+  padding: 0;
 }
 
-header {
-  background: #e6f0ff;
+header, #countdowns, #eta {
+  background: white;
   padding: 1em;
-  text-align: center;
-  border-bottom: 1px solid #ccc;
-}
-
-#countdowns, #eta {
-  margin-top: 0.5em;
-  font-weight: bold;
-}
-
-main {
-  padding: 1em;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .day-block {
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  margin-bottom: 1em;
-  padding: 1em;
   background: white;
+  margin: 1em;
+  padding: 1em;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+.day-block h2 {
+  font-size: 1.2em;
+  margin-top: 0;
+  color: #1a73e8;
 }
 
 button {
-  display: block;
-  margin: 0.5em 0;
-  padding: 0.7em;
-  width: 100%;
-  border: none;
-  background: #0078D7;
+  background: #1a73e8;
   color: white;
-  border-radius: 6px;
-  font-size: 1em;
+  border: none;
+  padding: 0.6em 1.2em;
+  margin-top: 0.4em;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+button:hover {
+  background: #0c55c0;
+}
+
+table {
+  width: 100%;
+  margin-top: 1em;
+  border-collapse: collapse;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 6px;
+  text-align: center;
+  font-size: 0.9em;
+}
+
+img {
+  vertical-align: middle;
+}
+
+@media (max-width: 600px) {
+  body {
+    font-size: 15px;
+  }
+
+  .day-block {
+    margin: 0.5em;
+    padding: 0.8em;
+  }
+
+  button {
+    width: 100%;
+  }
 }

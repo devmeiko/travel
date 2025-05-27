@@ -1,73 +1,127 @@
+let activeJourney = null;
+let etaInterval = null;
+
 async function loadSchedule() {
   const response = await fetch('data.json');
   const data = await response.json();
   const scheduleContainer = document.getElementById('schedule');
+  scheduleContainer.innerHTML = "";
+
   const now = new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // strip time
+
   let nextEventTime = null;
 
-  const today = new Date();
-today.setHours(0, 0, 0, 0); // strip time for accurate date comparison
+  for (const date in data) {
+    const [y, m, d] = date.split('-');
+    const dateObj = new Date(y, m - 1, d);
+    if (dateObj < today) continue;
 
-for (const date in data) {
-  const [y, m, d] = date.split('-');
-  const dateObj = new Date(y, m - 1, d);
-  if (dateObj < today) continue; // skip past days
+    const day = data[date];
+    const block = document.createElement('div');
+    block.className = 'day-block';
 
-  const day = data[date];
-  const block = document.createElement('div');
-  block.className = 'day-block';
+    const formattedDate = `${d}/${m}/${y}`;
+    const heading = document.createElement('h2');
+    heading.textContent = `${formattedDate} – ${day.location}`;
+    block.appendChild(heading);
 
-  const formattedDate = `${d}/${m}/${y}`;
-  const heading = document.createElement('h2');
-  heading.textContent = `${formattedDate} – ${day.location}`;
-  block.appendChild(heading);
+    for (const event of day.events) {
+      const eDiv = document.createElement('div');
+      const eTitle = document.createElement('p');
+      eTitle.innerHTML = `<strong>${event.time}</strong> – ${event.title}`;
+      eDiv.appendChild(eTitle);
 
-  for (const event of day.events) {
-    const eDiv = document.createElement('div');
-    const eTitle = document.createElement('p');
-    eTitle.innerHTML = `<strong>${event.time}</strong> – ${event.title}`;
-    eDiv.appendChild(eTitle);
+      const eventDate = new Date(`${date}T${event.time}`);
+      const plannedTimeStr = `${date}T${event.time}`;
 
-    if (event.maps_link) {
-      const btnMap = document.createElement('button');
-      btnMap.textContent = '📍 Open route';
-      btnMap.onclick = () => window.open(event.maps_link, '_blank');
-      eDiv.appendChild(btnMap);
+      if (event.maps_link) {
+        const btnMap = document.createElement('button');
+        btnMap.textContent = '📍 Open route';
+        btnMap.onclick = () => window.open(event.maps_link, '_blank');
+        eDiv.appendChild(btnMap);
+      }
+
+      if (event.destination_coords) {
+        const btnStart = document.createElement('button');
+        btnStart.textContent = '▶️ Start journey';
+        btnStart.onclick = () => {
+          if (activeJourney) return alert("Only one active journey at a time.");
+          if (!confirm("Start this journey?")) return;
+        
+          // Verberg alle andere start-knoppen
+          document.querySelectorAll('button').forEach(btn => {
+            if (btn.textContent === '▶️ Start journey') btn.style.display = 'none';
+          });
+        
+          activeJourney = eDiv;
+          btnStart.style.display = 'none'; // Alleen verbergen, niet verwijderen
+        
+          const etaBox = document.createElement('div');
+          etaBox.className = 'eta-box';
+          eDiv.appendChild(etaBox);
+        
+          async function updateETA() {
+            await showETA(event.destination_coords, plannedTimeStr, etaBox);
+          }
+        
+          updateETA();
+          etaInterval = setInterval(updateETA, 60000);
+        
+          const btnStop = document.createElement('button');
+          btnStop.textContent = '■ End journey';
+          btnStop.onclick = () => {
+            if (!confirm("Stop this journey?")) return;
+        
+            clearInterval(etaInterval);
+            etaInterval = null;
+            activeJourney = null;
+        
+            etaBox.remove();
+            btnStop.remove();
+        
+            // Toon alle start-knoppen opnieuw
+            document.querySelectorAll('button').forEach(btn => {
+              if (btn.textContent === '▶️ Start journey') btn.style.display = 'inline-block';
+            });
+        
+            // ETA bovenaan wissen
+            document.getElementById('eta').textContent = '🛰️ ETA will appear here once a journey is started.';
+        
+            btnStart.style.display = 'inline-block'; // Herstel knop
+          };
+          eDiv.appendChild(btnStop);
+        };             
+        eDiv.appendChild(btnStart);
+      }
+
+      if (event.weather_location && event.duration_minutes) {
+        showWeatherForecast(
+          event.weather_location,
+          plannedTimeStr,
+          event.duration_minutes,
+          eDiv
+        );
+      }
+
+      if (!nextEventTime || (eventDate > now && eventDate < nextEventTime)) {
+        nextEventTime = eventDate;
+      }
+
+      block.appendChild(eDiv);
     }
 
-    if (event.weather_location && event.duration_minutes) {
-      showWeatherForecast(
-        event.weather_location,
-        `${date}T${event.time}`,
-        event.duration_minutes,
-        eDiv
-      );
-    }
-
-    if (event.destination_coords) {
-  const plannedTime = `${date}T${event.time}`;
-  showETA(event.destination_coords, plannedTime, eDiv);
-}
-
-
-    block.appendChild(eDiv);
-
-    const eventDate = new Date(`${date}T${event.time}`);
-    if (!nextEventTime || (eventDate > now && eventDate < nextEventTime)) {
-      nextEventTime = eventDate;
-    }
+    scheduleContainer.appendChild(block);
   }
 
-  scheduleContainer.appendChild(block);
-}
+  const etaDiv = document.getElementById('eta');
+  etaDiv.textContent = '🛰️ ETA will appear here once a journey is started.';
 
   if (nextEventTime) {
     updateCountdown(nextEventTime);
     setInterval(() => updateCountdown(nextEventTime), 1000);
   }
-
-  const etaDiv = document.getElementById('eta');
-  etaDiv.textContent = '🚗 ETA-berekening komt hier (vereist GPS + route)';
 }
 
 function updateCountdown(targetTime) {
@@ -182,7 +236,7 @@ window.onload = loadSchedule;
 
 async function showETA(destination, plannedTimeStr, container) {
   if (!navigator.geolocation) {
-    container.innerHTML += "<p>ETA unavailable: GPS not supported.</p>";
+    container.textContent = "ETA unavailable: GPS not supported.";
     return;
   }
 
@@ -193,31 +247,31 @@ async function showETA(destination, plannedTimeStr, container) {
     const plannedTime = new Date(plannedTimeStr);
 
     const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destinationStr}&key=${GOOGLE_MAPS_API_KEY}&departure_time=now`;
-    const proxy = "https://corsproxy.io/?"; // alleen nodig voor lokaal testen
+    const proxy = "https://corsproxy.io/?";
 
     try {
       const res = await fetch(proxy + url);
       const data = await res.json();
 
       if (!data.routes || !data.routes.length) {
-        container.innerHTML += "<p>ETA unavailable: No route found.</p>";
+        container.textContent = "ETA unavailable: no route.";
         return;
       }
 
       const durationSec = data.routes[0].legs[0].duration.value;
       const eta = new Date(Date.now() + durationSec * 1000);
       const diffMin = Math.round((eta - plannedTime) / 60000);
-      const diffLabel =
-        diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`;
+      const label = diffMin === 0 ? "on time" : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
 
-      container.innerHTML += `
-        <p>🛰️ Estimated arrival: ${eta.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} (${diffLabel})</p>
-      `;
+      const text = `🛰️ Estimated arrival: ${eta.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} (${label})`;
+      container.textContent = text;
+      document.getElementById('eta').textContent = text;
+
     } catch (err) {
       console.error(err);
-      container.innerHTML += "<p>ETA error. Check API key or browser.</p>";
+      container.textContent = "ETA error.";
     }
   }, () => {
-    container.innerHTML += "<p>GPS permission denied.</p>";
+    container.textContent = "GPS denied.";
   });
 }
