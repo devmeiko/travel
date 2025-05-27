@@ -1,6 +1,11 @@
 let activeJourney = null;
 let etaInterval = null;
 
+function markActiveJourneyButton(btn) {
+  document.querySelectorAll('.start-journey-btn').forEach(b => b.classList.remove('active-journey'));
+  btn.classList.add('active-journey');
+}
+
 async function loadSchedule() {
   const response = await fetch('data.json');
   const data = await response.json();
@@ -36,27 +41,31 @@ async function loadSchedule() {
       const eventDate = new Date(`${date}T${event.time}`);
       const plannedTimeStr = `${date}T${event.time}`;
 
+      const buttonWrapper = document.createElement('div');
+      buttonWrapper.className = 'button-group';
+
       if (event.maps_link) {
         const btnMap = document.createElement('button');
-        btnMap.textContent = '📍 Open route';
+        btnMap.textContent = 'Open route';
         btnMap.onclick = () => window.open(event.maps_link, '_blank');
-        eDiv.appendChild(btnMap);
+        buttonWrapper.appendChild(btnMap);
       }
 
       if (event.destination_coords) {
         const btnStart = document.createElement('button');
-        btnStart.textContent = '▶️ Start journey';
+        btnStart.textContent = '▶ Start journey';
+      
         btnStart.onclick = () => {
           if (activeJourney) return alert("Only one active journey at a time.");
           if (!confirm("Start this journey?")) return;
         
-          // Verberg alle andere start-knoppen
+          // Hide all start buttons
           document.querySelectorAll('button').forEach(btn => {
-            if (btn.textContent === '▶️ Start journey') btn.style.display = 'none';
+            if (btn.textContent === '▶ Start journey') btn.style.display = 'none';
           });
         
           activeJourney = eDiv;
-          btnStart.style.display = 'none'; // Alleen verbergen, niet verwijderen
+          btnStart.style.display = 'none';
         
           const etaBox = document.createElement('div');
           etaBox.className = 'eta-box';
@@ -73,28 +82,30 @@ async function loadSchedule() {
           btnStop.textContent = '■ End journey';
           btnStop.onclick = () => {
             if (!confirm("Stop this journey?")) return;
-        
+          
             clearInterval(etaInterval);
             etaInterval = null;
             activeJourney = null;
-        
+          
             etaBox.remove();
             btnStop.remove();
-        
-            // Toon alle start-knoppen opnieuw
+          
             document.querySelectorAll('button').forEach(btn => {
-              if (btn.textContent === '▶️ Start journey') btn.style.display = 'inline-block';
+              if (btn.textContent === '▶ Start journey') btn.style.display = 'inline-block';
             });
-        
-            // ETA bovenaan wissen
+          
             document.getElementById('eta').textContent = '🛰️ ETA will appear here once a journey is started.';
-        
-            btnStart.style.display = 'inline-block'; // Herstel knop
+            btnStart.style.display = 'inline-block';
           };
-          eDiv.appendChild(btnStop);
-        };             
-        eDiv.appendChild(btnStart);
+        
+          buttonWrapper.appendChild(btnStop); // Add End Journey to the same wrapper
+        };
+      
+        buttonWrapper.appendChild(btnStart);
       }
+
+      eDiv.appendChild(buttonWrapper);
+
 
       if (event.weather_location && event.duration_minutes) {
         showWeatherForecast(
