@@ -1,5 +1,8 @@
 let activeJourney = null;
 let etaInterval = null;
+let journeyStartTime = null;
+let journeyDuration = null; // in seconden
+let progressInterval = null;
 
 function markActiveJourneyButton(btn) {
   document.querySelectorAll('.start-journey-btn').forEach(b => b.classList.remove('active-journey'));
@@ -58,6 +61,10 @@ async function loadSchedule() {
         btnStart.onclick = () => {
           if (activeJourney) return alert("Only one active journey at a time.");
           if (!confirm("Start this journey?")) return;
+
+          journeyStartTime = Date.now();
+          document.getElementById('progressBar').style.width = '0%';
+          document.getElementById('progressContainer').style.display = 'block';
         
           // Hide all start buttons
           document.querySelectorAll('button').forEach(btn => {
@@ -88,6 +95,12 @@ async function loadSchedule() {
             activeJourney = null;
           
             etaBox.remove();
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('progressBar').style.width = '0%';
+            clearInterval(progressInterval);
+            progressInterval = null;
+            journeyStartTime = null;
+            journeyDuration = null;
             btnStop.remove();
           
             document.querySelectorAll('button').forEach(btn => {
@@ -243,7 +256,19 @@ async function showWeatherForecast(location, startTime, durationMinutes, contain
   container.appendChild(wrapper);
 }
 
-window.onload = loadSchedule;
+function updateProgressBar() {
+  if (journeyDuration === null || journeyStartTime === null) return;
+
+  const elapsed = (Date.now() - journeyStartTime) / 1000; // seconden
+  const percent = Math.min(100, (elapsed / journeyDuration) * 100);
+  const progressBar = document.getElementById('progressBar');
+  progressBar.style.width = `${percent}%`;
+}
+
+window.onload = () => {
+  loadSchedule();
+};
+
 
 async function showETA(destination, plannedTimeStr, container) {
   if (!navigator.geolocation) {
@@ -269,14 +294,28 @@ async function showETA(destination, plannedTimeStr, container) {
         return;
       }
 
-      const durationSec = data.routes[0].legs[0].duration.value;
+      const leg = data.routes[0].legs[0];
+      const durationSec = leg.duration.value;
+      journeyDuration = durationSec; // nodig voor progress bar
       const eta = new Date(Date.now() + durationSec * 1000);
-      const diffMin = Math.round((eta - plannedTime) / 60000);
-      const label = diffMin === 0 ? "on time" : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
 
-      const text = `🛰️ Estimated arrival: ${eta.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} (${label})`;
+      const diffMin = Math.round((eta - plannedTime) / 60000);
+      const label = diffMin === 0
+        ? "on time"
+        : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
+
+      const text = `🛰️ Estimated arrival: ${eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`;
       container.textContent = text;
       document.getElementById('eta').textContent = text;
+
+      // Start of reset progress bar
+      journeyStartTime = Date.now();
+      document.getElementById('progressBar').style.width = '0%';
+      document.getElementById('progressContainer').style.display = 'block';
+
+      clearInterval(progressInterval);
+      updateProgressBar(); // meteen één keer updaten
+      progressInterval = setInterval(updateProgressBar, 1000); // elke seconde bijwerken
 
     } catch (err) {
       console.error(err);

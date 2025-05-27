@@ -162,3 +162,21 @@ thead {
   margin-top: 0.3em;
   margin-bottom: 0.3em;
 }
+
+#progressContainer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 15px;
+  background-color: #e0e0e0;
+  z-index: 20; /* Zorgt dat het altijd boven content blijft */
+  overflow: hidden;
+}
+
+#progressBar {
+  height: 100%;
+  width: 0%;
+  background-color: #4285f4; /* Google's blauw */
+  transition: width 0.2s ease-out;
+}
