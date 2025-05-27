@@ -12,11 +12,17 @@
   <title>UK Trip Planner</title>
 </head>
 <body>
-  <header>
-    <h1>🧭 UK Trip planner</h1>
-    <div id="countdowns"></div>
-    <div id="eta"></div>
+  <header id="mainHeader" class="expanded">
+    <div class="header-bar">
+      <h1>🧭 UK Trip planner</h1>
+      <button id="toggleHeader" title="Toggle header view">▲</button>
+    </div>
+    <div id="headerDetails">
+      <div id="countdowns">⏳ Loading countdown...</div>
+      <div id="eta">🛰️ ETA will appear here once a journey is started.</div>
+    </div>
   </header>
+
   <main id="schedule"></main>
 
   <script src="script.js"></script>

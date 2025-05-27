@@ -275,3 +275,18 @@ async function showETA(destination, plannedTimeStr, container) {
     container.textContent = "GPS denied.";
   });
 }
+
+document.getElementById('toggleHeader').onclick = () => {
+  const header = document.getElementById('mainHeader');
+  const toggle = document.getElementById('toggleHeader');
+
+  if (header.classList.contains('expanded')) {
+    header.classList.remove('expanded');
+    header.classList.add('collapsed');
+    toggle.textContent = '▼';
+  } else {
+    header.classList.remove('collapsed');
+    header.classList.add('expanded');
+    toggle.textContent = '▲';
+  }
+};
