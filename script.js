@@ -5,6 +5,7 @@ let journeyDuration = null; // in seconden
 let progressInterval = null;
 let alreadyUploaded = false;
 let scheduleData = {};
+const db = window.db;
 
 const SHEET_URL = "https://opensheet.elk.sh/1XbpOSyhPHeR7T8tbabsAhW61rMxBY60IKQihS2F75mE/Sheet1";
 
@@ -22,7 +23,7 @@ async function loadSchedule() {
   const snapshot = await db.ref('scheduleData').once('value');
   const data = snapshot.val();
   scheduleData = data;
-  const scheduleContainer = document.getElementById('schedule');
+  const scheduleContainer = document.getElementById('homePage');
   scheduleContainer.innerHTML = "";
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -220,6 +221,15 @@ function updateProgressBar() {
   progressBar.style.width = `${percent}%`;
 }
 
+// 🔄 Pagina-switching
+function switchPage(id) {
+  document.getElementById('homePage').style.display = id === 'homePage' ? 'block' : 'none';
+  document.getElementById('notesPage').style.display = id === 'notesPage' ? 'block' : 'none';
+  document.getElementById('optionsPage').style.display = id === 'optionsPage' ? 'block' : 'none';
+}
+
+window.switchPage = switchPage;
+
 window.onload = () => {
   loadSchedule();
 
@@ -258,6 +268,9 @@ window.onload = () => {
   db.ref('lastRefresh').on('value', () => {
     loadSchedule(); // laad nieuwste data van Firebase
   });
+
+    switchPage('homePage'); // standaard home tonen
+    startNotesSync();       // notes starten
 };
 
 async function showETA(destination, plannedTimeStr, container) {
@@ -337,39 +350,38 @@ function deviceId() {
 }
 
 function syncAndShowETA() {
-  const id = deviceId();
-  const myRank = parseInt(localStorage.getItem('deviceRank')) || 0;
+  if (!scheduleData) return;
 
-  // Check regelmatig wie hoogste rank heeft
-  setInterval(async () => {
-    const snapshot = await db.ref('devices').once('value');
-    const devices = snapshot.val();
-    if (!devices) return;
+  const rank = parseInt(localStorage.getItem("deviceRank") || "0");
+  const allRanksRef = db.ref("ranks");
+  const etaRef = db.ref("liveETA");
 
-    let topDevice = null;
-    for (const devId in devices) {
-      if (!topDevice || devices[devId].rank > topDevice.rank) {
-        topDevice = { id: devId, ...devices[devId] };
-      }
-    }
+  // Sla lokale deviceRank op
+  allRanksRef.child(deviceId).set(rank);
 
-    if (!topDevice || !topDevice.id) return;
+  // Haal hoogste rank op
+  allRanksRef.once("value").then((snapshot) => {
+    const ranks = snapshot.val() || {};
+    const maxRank = Math.max(...Object.values(ranks));
 
-    if (topDevice.id === id) {
-      // Ik ben het top device → bereken en push ETA
+    if (rank === maxRank) {
+      // Enkel hoogste toestel berekent de ETA
       calculateETAAndBroadcast();
-    } else {
-      // Ik ben NIET top device → luister naar ETA
-      db.ref('liveETA').off();
-      db.ref('liveETA').on('value', snapshot => {
-        const etaText = snapshot.val();
-        if (etaText) {
-          document.getElementById('eta').textContent = etaText;
-        }
-      });
     }
+  });
 
-  }, 5000); // elke 5 seconden controleren
+  // Alle toestellen luisteren
+  etaRef.off(); // voorkom dubbele listeners
+  etaRef.on("value", (snapshot) => {
+    const eta = snapshot.val();
+    const etaDisplay = document.getElementById("eta");
+
+    if (!eta || !eta.time || !eta.eventName) {
+      etaDisplay.textContent = "⚠️ No ETA scheduled – upcoming event is too far away.";
+    } else {
+      etaDisplay.textContent = `🛰️ ETA for "${eta.eventName}": ${eta.time}`;
+    }
+  });
 }
 
 function calculateETAAndBroadcast() {
@@ -404,17 +416,15 @@ function calculateETAAndBroadcast() {
   });
 }
 
-function getUpcomingEvent() {
-  // Zelfde logic als loadSchedule() → haal eerstvolgende event in toekomst
+function getUpcomingEvent(maxHoursAhead = 3) {
   const now = new Date();
-  const dates = Object.keys(scheduleData).sort(); // `scheduleData` moet globaal beschikbaar zijn
-  for (const date of dates) {
+  const maxTime = new Date(now.getTime() + maxHoursAhead * 60 * 60 * 1000);
+
+  for (const date of Object.keys(scheduleData).sort()) {
     for (const event of scheduleData[date].events) {
-      const [year, month, day] = date.split('-').map(Number);
-      const [hour, minute] = event.time.split(':').map(Number);
-      const eventTime = new Date(year, month - 1, day, hour, minute);
-      if (eventTime > now) {
-        return event;
+      const eventTime = parseDateTime(date, event.time);
+      if (eventTime > now && eventTime <= maxTime) {
+        return { date, event };
       }
     }
   }
@@ -465,3 +475,35 @@ async function fetchAndSaveSpreadsheet() {
   }
 }
 
+// 🔁 Notes synchronisatie
+function startNotesSync() {
+  const textarea = document.getElementById('globalNotes');
+  const status = document.getElementById('notesSavedStatus');
+  const saveBtn = document.getElementById('saveNotes');
+
+  // Ophalen bij laden
+  db.ref('globalNotes').once('value').then(snapshot => {
+    const val = snapshot.val();
+    if (val !== null) textarea.value = val;
+  });
+
+  // Opslaan bij klik
+  saveBtn.onclick = () => {
+    const content = textarea.value;
+    db.ref('globalNotes').set(content).then(() => {
+      const now = new Date().toLocaleTimeString();
+      status.textContent = `✅ Notes saved at ${now}`;
+    });
+  };
+}
+
+// Zorg dat dit BUITEN window.onload staat
+function switchPage(pageId) {
+  const pages = ['homePage', 'notesPage', 'optionsPage'];
+  pages.forEach(id => {
+    const page = document.getElementById(id);
+    if (page) {
+      page.style.display = (id === pageId) ? 'block' : 'none';
+    }
+  });
+}

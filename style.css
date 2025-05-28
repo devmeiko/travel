@@ -180,3 +180,10 @@ thead {
   background-color: #4285f4; /* Google's blauw */
   transition: width 0.2s ease-out;
 }
+
+#homePage {
+  padding-bottom: 80px; /* ruimte onderaan zodat je niet achter navigatiebalk zit */
+  padding-top: 1em;
+  max-width: 680px;
+  margin: 0 auto;
+}
