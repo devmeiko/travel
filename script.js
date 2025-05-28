@@ -4,6 +4,7 @@ let journeyStartTime = null;
 let journeyDuration = null; // in seconden
 let progressInterval = null;
 let alreadyUploaded = false;
+let scheduleData = {};
 
 async function getActiveJourney() {
   const snapshot = await db.ref('activeJourney').once('value');
@@ -18,6 +19,7 @@ function markActiveJourneyButton(btn) {
 async function loadSchedule() {
   const response = await fetch('data.json');
   const data = await response.json();
+  scheduleData = data;
   const scheduleContainer = document.getElementById('schedule');
   scheduleContainer.innerHTML = "";
 
@@ -213,6 +215,28 @@ function updateProgressBar() {
 
 window.onload = () => {
   loadSchedule();
+
+  document.getElementById('saveDeviceRank').onclick = () => {
+    const val = parseInt(document.getElementById('deviceRank').value);
+    if (isNaN(val)) return alert("Enter a valid number.");
+    localStorage.setItem('deviceRank', val);
+    document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${val}`;
+
+    // Update Firebase
+    const id = deviceId();
+    db.ref(`devices/${id}`).set({
+      rank: val,
+      updatedAt: Date.now()
+    });
+  };
+
+  const storedRank = localStorage.getItem('deviceRank');
+  if (storedRank !== null) {
+    document.getElementById('deviceRank').value = storedRank;
+    document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${storedRank}`;
+  }
+
+  syncAndShowETA(); // Live ETA handling
 };
 
 
@@ -228,11 +252,8 @@ async function showETA(destination, plannedTimeStr, container) {
     const destinationStr = `${destination.lat},${destination.lon}`;
     const plannedTime = new Date(plannedTimeStr);
 
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destinationStr}&key=${GOOGLE_MAPS_API_KEY}&departure_time=now`;
-    const proxy = "https://corsproxy.io/?";
-
     try {
-      const res = await fetch(proxy + url);
+      const res = await fetch(`/maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
       const data = await res.json();
 
       if (!data.routes || !data.routes.length) {
@@ -287,26 +308,93 @@ document.getElementById('toggleHeader').onclick = () => {
   }
 };
 
-// 🔧 Device ID invoer
-document.getElementById('saveDeviceRank').onclick = () => {
-  const val = parseInt(document.getElementById('deviceRank').value);
-  if (isNaN(val)) return alert("Enter a valid number.");
-  localStorage.setItem('deviceRank', val);
-  document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${val}`;
-};
-
-// Bij herladen tonen
-const storedRank = localStorage.getItem('deviceRank');
-if (storedRank !== null) {
-  document.getElementById('deviceRank').value = storedRank;
-  document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${storedRank}`;
-}
-
-
 function deviceId() {
   if (!localStorage.getItem('deviceId')) {
     const id = 'dev_' + Math.random().toString(36).slice(2, 10);
     localStorage.setItem('deviceId', id);
   }
   return localStorage.getItem('deviceId');
+}
+
+function syncAndShowETA() {
+  const id = deviceId();
+  const myRank = parseInt(localStorage.getItem('deviceRank')) || 0;
+
+  // Check regelmatig wie hoogste rank heeft
+  setInterval(async () => {
+    const snapshot = await db.ref('devices').once('value');
+    const devices = snapshot.val();
+    if (!devices) return;
+
+    let topDevice = null;
+    for (const devId in devices) {
+      if (!topDevice || devices[devId].rank > topDevice.rank) {
+        topDevice = { id: devId, ...devices[devId] };
+      }
+    }
+
+    if (!topDevice || !topDevice.id) return;
+
+    if (topDevice.id === id) {
+      // Ik ben het top device → bereken en push ETA
+      calculateETAAndBroadcast();
+    } else {
+      // Ik ben NIET top device → luister naar ETA
+      db.ref('liveETA').off();
+      db.ref('liveETA').on('value', snapshot => {
+        const etaText = snapshot.val();
+        if (etaText) {
+          document.getElementById('eta').textContent = etaText;
+        }
+      });
+    }
+
+  }, 5000); // elke 5 seconden controleren
+}
+
+function calculateETAAndBroadcast() {
+  const activeEvent = getUpcomingEvent(); // Zelf schrijven: haalt eerstvolgende event met locatie
+  if (!activeEvent) return;
+
+  const { destination_coords, time } = activeEvent;
+  const plannedTimeStr = `${new Date().toISOString().split('T')[0]}T${time}`;
+
+  navigator.geolocation.getCurrentPosition(async position => {
+    const origin = `${position.coords.latitude},${position.coords.longitude}`;
+    const destinationStr = `${destination_coords.lat},${destination_coords.lon}`;
+
+      try {
+        const res = await fetch(`/maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
+        const data = await res.json();
+      if (!data.routes || !data.routes.length) return;
+
+      const etaSec = data.routes[0].legs[0].duration.value;
+      const etaDate = new Date(Date.now() + etaSec * 1000);
+      const plannedDate = new Date(plannedTimeStr);
+      const diffMin = Math.round((etaDate - plannedDate) / 60000);
+      const label = diffMin === 0 ? "on time" : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
+
+      const etaText = `🛰️ Estimated arrival: ${etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`;
+
+      await db.ref('liveETA').set(etaText);
+      document.getElementById('eta').textContent = etaText;
+    } catch (err) {
+      console.error("ETA broadcast failed", err);
+    }
+  });
+}
+
+function getUpcomingEvent() {
+  // Zelfde logic als loadSchedule() → haal eerstvolgende event in toekomst
+  const now = new Date();
+  const dates = Object.keys(scheduleData).sort(); // `scheduleData` moet globaal beschikbaar zijn
+  for (const date of dates) {
+    for (const event of scheduleData[date].events) {
+      const eventTime = new Date(`${date}T${event.time}`);
+      if (eventTime > now) {
+        return event;
+      }
+    }
+  }
+  return null;
 }

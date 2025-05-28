@@ -22,16 +22,11 @@
       <div id="eta">🛰️ ETA will appear here once a journey is started.</div>
     </div>
     <div id="progressContainer">
-      <div id="progressBar">
-      </div>
+      <div id="progressBar"></div>
     </div>
-
   </header>
 
   <main id="schedule"></main>
-
-  <script src="script.js"></script>
-  <script src="config.js"></script>
 
   <div id="deviceControl" style="margin: 2em 0; text-align: center;">
     <input type="number" id="deviceRank" placeholder="Device number" min="0" style="padding: 0.5em; width: 120px;">
@@ -39,5 +34,13 @@
     <p id="currentRank" style="margin-top: 0.5em; font-size: 0.9em;"></p>
   </div>
 
+  <!-- ✅ Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- ✅ Jouw scripts in correcte volgorde -->
+  <script src="firebase-config.js"></script>
+  <script src="config.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
