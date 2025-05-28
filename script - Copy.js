@@ -3,6 +3,7 @@ let etaInterval = null;
 let journeyStartTime = null;
 let journeyDuration = null; // in seconden
 let progressInterval = null;
+const dbRef = firebase.database().ref('activeJourney');
 
 async function getActiveJourney() {
   const snapshot = await db.ref('activeJourney').once('value');
@@ -15,6 +16,12 @@ function markActiveJourneyButton(btn) {
 }
 
 async function loadSchedule() {
+  // 1) Registreer precies één listener voor alle devices
+  dbRef.on('value', snapshot => {
+    handleFirebaseJourneyChange(snapshot.val());
+  });
+
+  // 2) Haal je lokale agenda op
   const response = await fetch('data.json');
   const data = await response.json();
   const scheduleContainer = document.getElementById('schedule');
@@ -22,10 +29,11 @@ async function loadSchedule() {
 
   const now = new Date();
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // strip time
+  today.setHours(0, 0, 0, 0);
 
   let nextEventTime = null;
 
+  // 3) Loop over alle dagen in data.json
   for (const date in data) {
     const [y, m, d] = date.split('-');
     const dateObj = new Date(y, m - 1, d);
@@ -35,27 +43,25 @@ async function loadSchedule() {
     const block = document.createElement('div');
     block.className = 'day-block';
 
+    // Datum kop
     const heading = document.createElement('h2');
     heading.textContent = `${d}/${m}/${y} – ${day.location}`;
     block.appendChild(heading);
 
+    // 4) Loop over alle events
     for (const event of day.events) {
       const eDiv = document.createElement('div');
       const eTitle = document.createElement('p');
       eTitle.innerHTML = `<strong>${event.time}</strong> – ${event.title}`;
       eDiv.appendChild(eTitle);
 
-      // ───────────── SNIPPET #1 ────────────
-      // zet deze data-attribute zodat je later via JS kunt herkennen welk blok actief is
-      const journeyId = `${date}_${event.time.replace(':','-')}`;
-      eDiv.dataset.journeyId = journeyId;
-      // ──────────────────────────────────────
-
       const plannedTimeStr = `${date}T${event.time}`;
 
+      // Button-wrapper
       const buttonWrapper = document.createElement('div');
       buttonWrapper.className = 'button-group';
 
+      // Open route-knop
       if (event.maps_link) {
         const btnMap = document.createElement('button');
         btnMap.textContent = 'Open route';
@@ -63,52 +69,28 @@ async function loadSchedule() {
         buttonWrapper.appendChild(btnMap);
       }
 
+      // Start journey-knop
       if (event.destination_coords) {
         const btnStart = document.createElement('button');
         btnStart.textContent = '▶ Start journey';
         btnStart.classList.add('start-journey-btn');
         btnStart.onclick = () => {
-          // ───────────── SNIPPET #2 ────────────
-          // wanneer je op Start klikt, bewaar je alleen je local state.
-          // Verwijder hier alle dbRef calls:
-          //    dbRef.set(...)
-          // en laat de rest ongewijzigd.
-          activeJourney = eDiv;
-          journeyStartTime = Date.now();
-          document.getElementById('progressBar').style.width = '0%';
-          document.getElementById('progressContainer').style.display = 'block';
-          document.querySelectorAll('.start-journey-btn').forEach(b=>b.style.display='none');
-          btnStart.style.display = 'none';
-
-          const etaBox = document.createElement('div');
-          etaBox.className = 'eta-box';
-          eDiv.appendChild(etaBox);
-
-          async function updateETA() {
-            await showETA(event.destination_coords, plannedTimeStr, etaBox);
-          }
-          updateETA();
-          etaInterval = setInterval(updateETA, 60000);
-
-          const btnStop = document.createElement('button');
-          btnStop.textContent = '■ End journey';
-          btnStop.onclick = () => {
-            // idem, verwijder dbRef.remove()
-            clearInterval(etaInterval);
-            etaBox.remove();
-            document.getElementById('progressContainer').style.display = 'none';
-            document.getElementById('progressBar').style.width = '0%';
-            document.querySelectorAll('.start-journey-btn').forEach(b=>b.style.display='inline-block');
-            activeJourney = null;
-          };
-          buttonWrapper.appendChild(btnStop);
-          // ──────────────────────────────────────
+          const journeyId = `${date}_${event.time.replace(':', '-')}`;
+          eDiv.dataset.journeyId = journeyId;
+          dbRef.set({
+            id: journeyId,
+            coords: event.destination_coords,
+            plannedTimeStr,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+          });
+          // lokale UI-updates...
         };
         buttonWrapper.appendChild(btnStart);
       }
 
       eDiv.appendChild(buttonWrapper);
 
+      // Weer-widget, etc.
       if (event.weather_location && event.duration_minutes) {
         showWeatherForecast(
           event.weather_location,
@@ -118,10 +100,15 @@ async function loadSchedule() {
         );
       }
 
+      // Volgende event voor countdown
       const eventDate = new Date(plannedTimeStr);
       if (!nextEventTime || (eventDate > now && eventDate < nextEventTime)) {
         nextEventTime = eventDate;
       }
+
+      // **Snippet: zet hier de data-journey-id**
+      const journeyId = `${date}_${event.time.replace(':', '-')}`;
+      eDiv.dataset.journeyId = journeyId;
 
       block.appendChild(eDiv);
     }
@@ -129,6 +116,7 @@ async function loadSchedule() {
     scheduleContainer.appendChild(block);
   }
 
+  // Countdown-init
   if (nextEventTime) {
     updateCountdown(nextEventTime);
     setInterval(() => updateCountdown(nextEventTime), 1000);
@@ -327,3 +315,49 @@ document.getElementById('toggleHeader').onclick = () => {
     toggle.textContent = '▲';
   }
 };
+
+function handleFirebaseJourneyChange(data) {
+  // 1) Ruim eerst de oude UI-elementen op
+  clearInterval(etaInterval);
+  document.querySelectorAll('.eta-box, .end-journey-btn').forEach(el => el.remove());
+
+  // 2) Reset knoppen/progress
+  document.getElementById('progressContainer').style.display = 'none';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('eta').textContent = '🛰️ ETA will appear here once a journey is started.';
+  document.querySelectorAll('.start-journey-btn').forEach(btn => btn.style.display = 'inline-block');
+
+  if (!data) {
+    // Geen actieve journey: klaar
+    return;
+  }
+
+  // 3) Er is wél een actieve journey: vind het bijbehorende blok
+  const target = document.querySelector(`[data-journey-id="${data.id}"]`);
+  if (!target) return;
+
+  // 4) UI: hide alle start-knoppen
+  document.querySelectorAll('.start-journey-btn').forEach(btn => btn.style.display = 'none');
+
+  // 5) Voeg ETA-box toe
+  const etaBox = document.createElement('div');
+  etaBox.className = 'eta-box';
+  target.appendChild(etaBox);
+
+  // 6) Voeg 1 enkele End-Journey knop toe
+  const btnStop = document.createElement('button');
+  btnStop.textContent = '■ End journey';
+  btnStop.classList.add('end-journey-btn');
+  btnStop.onclick = () => {
+    if (!confirm("Stop this journey?")) return;
+    dbRef.remove();
+  };
+  target.querySelector('.button-group').appendChild(btnStop);
+
+  // 7) Toon progress bar en start de ETA-refresh
+  document.getElementById('progressContainer').style.display = 'block';
+  showETA(data.coords, data.plannedTimeStr, etaBox);
+  etaInterval = setInterval(() => {
+    showETA(data.coords, data.plannedTimeStr, etaBox);
+  }, 60000);
+}
