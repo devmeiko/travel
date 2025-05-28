@@ -5,6 +5,7 @@ let journeyDuration = null; // in seconden
 let progressInterval = null;
 let alreadyUploaded = false;
 let scheduleData = {};
+let arrivalTimer = null;
 
 const SHEET_URL = "https://opensheet.elk.sh/1XbpOSyhPHeR7T8tbabsAhW61rMxBY60IKQihS2F75mE/Sheet1";
 
@@ -263,6 +264,13 @@ window.onload = () => {
     await db.ref('lastRefresh').set(Date.now());
   };
 
+  // 🚫 Handler voor Cancel ETA-knop
+  document.getElementById('cancelETA').onclick = () => {
+    clearTimeout(arrivalTimer);
+    // Zet liveETA status op 'canceled'
+    db.ref('liveETA').set({ status: 'canceled' });
+  };
+
   // 📡 Luister op Firebase om alle clients automatisch te syncen
   db.ref('lastRefresh').on('value', () => {
     loadSchedule(); // laad nieuwste data van Firebase
@@ -283,6 +291,7 @@ async function showETA(destination, plannedTimeStr, container) {
     const origin = `${latitude},${longitude}`;
     const destinationStr = `${destination.lat},${destination.lon}`;
     const plannedTime = new Date(plannedTimeStr);
+    const diffMin = Math.round((eta - plannedTime) / 60000);
 
     try {
       const res = await fetch(`maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
@@ -298,7 +307,6 @@ async function showETA(destination, plannedTimeStr, container) {
       journeyDuration = durationSec; // nodig voor progress bar
       const eta = new Date(Date.now() + durationSec * 1000);
 
-      const diffMin = Math.round((eta - plannedTime) / 60000);
       const label = diffMin === 0
         ? "on time"
         : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
@@ -372,15 +380,27 @@ function syncAndShowETA() {
   // Alle toestellen luisteren
   etaRef.off(); // voorkom dubbele listeners
   etaRef.on("value", (snapshot) => {
-    const eta = snapshot.val();
+    const etaObj = snapshot.val();
     const etaDisplay = document.getElementById("eta");
-
-    if (!eta || !eta.time || !eta.eventName) {
+  
+    // Handmatige annulering
+    if (etaObj && etaObj.status === 'canceled') {
+      clearTimeout(arrivalTimer);
+      etaDisplay.textContent = "🚫 ETA has been canceled.";
+      return;
+    }
+    // Gearriveerd via timer
+    if (etaObj && etaObj.status === 'arrived') {
+      etaDisplay.textContent = "📍 You've arrived at your destination.";
+      return;
+    }
+    // Normale ETA-weergave
+    if (!etaObj || !etaObj.time || !etaObj.eventName) {
       etaDisplay.textContent = "⚠️ No ETA scheduled – upcoming event is too far away.";
     } else {
-      etaDisplay.textContent = `🛰️ ETA for "${eta.eventName}": ${eta.time}`;
+      etaDisplay.textContent = `🛰️ ETA for "${etaObj.eventName}": ${etaObj.time}`;
     }
-  });
+  });  
 }
 
 function calculateETAAndBroadcast() {
@@ -402,13 +422,28 @@ function calculateETAAndBroadcast() {
       const etaSec = data.routes[0].legs[0].duration.value;
       const etaDate = new Date(Date.now() + etaSec * 1000);
       const plannedDate = new Date(plannedTimeStr);
-      const diffMin = Math.round((etaDate - plannedDate) / 60000);
       const label = diffMin === 0 ? "on time" : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
 
-      const etaText = `🛰️ Estimated arrival: ${etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`;
-
-      await db.ref('liveETA').set(etaText);
-      document.getElementById('eta').textContent = etaText;
+      const etaText = `🛰️ Estimated arrival: ${etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`
+      
+      // Zet een object zodat we status kunnen bijhouden
+     const etaTimeStr = etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+     await db.ref('liveETA').set({
+       time: etaTimeStr,
+       eventName: activeEvent.event.title,
+       status: 'active'
+     });
+     document.getElementById('eta').textContent = `🛰️ Estimated arrival: ${etaTimeStr} (${label})`;
+    
+     // Als we binnen 10 min bij de geplande tijd zitten, start een 15 min timer
+     const diffMin = Math.round((etaDate - plannedDate) / 60000);
+     if (diffMin <= 10) {
+       clearTimeout(arrivalTimer);
+       arrivalTimer = setTimeout(() => {
+         // Na 15 min markeren we gearriveerd
+         db.ref('liveETA').update({ status: 'arrived' });
+       }, 15 * 60 * 1000);
+     }
     } catch (err) {
       console.error("ETA broadcast failed", err);
     }
