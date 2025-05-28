@@ -383,17 +383,20 @@ function syncAndShowETA() {
     const etaObj = snapshot.val();
     const etaDisplay = document.getElementById("eta");
   
-    // Handmatige annulering
+    // ⏭️ Bij ‘canceled’ meteen door naar volgende ETA
     if (etaObj && etaObj.status === 'canceled') {
       clearTimeout(arrivalTimer);
-      etaDisplay.textContent = "🚫 ETA has been canceled.";
+      // start opnieuw met het volgende event (indien binnen afstand)
+      calculateETAAndBroadcast();
       return;
     }
+  
     // Gearriveerd via timer
     if (etaObj && etaObj.status === 'arrived') {
       etaDisplay.textContent = "📍 You've arrived at your destination.";
       return;
     }
+  
     // Normale ETA-weergave
     if (!etaObj || !etaObj.time || !etaObj.eventName) {
       etaDisplay.textContent = "⚠️ No ETA scheduled – upcoming event is too far away.";
@@ -404,51 +407,73 @@ function syncAndShowETA() {
 }
 
 function calculateETAAndBroadcast() {
-  const activeEvent = getUpcomingEvent(); // Zelf schrijven: haalt eerstvolgende event met locatie
+  const activeEvent = getUpcomingEvent(); 
   if (!activeEvent) return;
 
-  const { destination_coords, time } = activeEvent.event;
-  const plannedTimeStr = `${new Date().toISOString().split('T')[0]}T${time}`;
+  // haal event zelf uit activeEvent
+  const { event } = activeEvent;
+  // en haal de velden uit event
+  const { destination_coords, time } = event;
+  // time is bijvoorbeeld "10:15"
+  const [planHour, planMin] = time.split(':').map(Number);
 
   navigator.geolocation.getCurrentPosition(async position => {
-    const origin = `${position.coords.latitude},${position.coords.longitude}`;
-    const destinationStr = `${destination_coords.lat},${destination_coords.lon}`;
+    try {
+      // 1) huidige locatie en bestemming
+      const origin      = `${position.coords.latitude},${position.coords.longitude}`;
+      const destination = `${destination_coords.lat},${destination_coords.lon}`;  // nu gedefinieerd
 
-      try {
-        const res = await fetch(`maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
-        const data = await res.json();
-      if (!data.routes || !data.routes.length) return;
+      // 2) vraag ETA op
+      const res  = await fetch(
+        `maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`
+      );
+      const data = await res.json();
+      if (!data.routes?.length) return;
 
-      const etaSec = data.routes[0].legs[0].duration.value;
-      const etaDate = new Date(Date.now() + etaSec * 1000);
-      const plannedDate = new Date(plannedTimeStr);
-      const label = diffMin === 0 ? "on time" : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
+      // 3) bereken ETA en geplande tijd
+      const etaSec      = data.routes[0].legs[0].duration.value;
+      const etaDate     = new Date(Date.now() + etaSec * 1000);
+      const now         = new Date();
+      const plannedDate = new Date(
+        now.getFullYear(), now.getMonth(), now.getDate(),
+        planHour, planMin, 0, 0
+      );
 
-      const etaText = `🛰️ Estimated arrival: ${etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`
-      
-      // Zet een object zodat we status kunnen bijhouden
-     const etaTimeStr = etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-     await db.ref('liveETA').set({
-       time: etaTimeStr,
-       eventName: activeEvent.event.title,
-       status: 'active'
-     });
-     document.getElementById('eta').textContent = `🛰️ Estimated arrival: ${etaTimeStr} (${label})`;
-    
-     // Als we binnen 10 min bij de geplande tijd zitten, start een 15 min timer
-     const diffMin = Math.round((etaDate - plannedDate) / 60000);
-     if (diffMin <= 10) {
-       clearTimeout(arrivalTimer);
-       arrivalTimer = setTimeout(() => {
-         // Na 15 min markeren we gearriveerd
-         db.ref('liveETA').update({ status: 'arrived' });
-       }, 15 * 60 * 1000);
-     }
+      // 4) diff & label
+      const diffMin = Math.round((etaDate - plannedDate) / 60000);
+      const label   = diffMin === 0
+        ? "on time"
+        : (diffMin > 0
+            ? `${diffMin} min late`
+            : `${Math.abs(diffMin)} min early`);
+
+      // 5) update Firebase & UI
+      const etaTimeStr = etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      await db.ref('liveETA').set({
+        time:      etaTimeStr,
+        eventName: event.title,
+        status:    'active'
+      });
+      document.getElementById('eta').textContent =
+        `🛰️ Estimated arrival: ${etaTimeStr} (${label})`;
+
+      // 6) optioneel: markeer “arrived” na 15 min als je binnen 10 min bent
+      if (diffMin <= 10) {
+        clearTimeout(arrivalTimer);
+        arrivalTimer = setTimeout(() => {
+          db.ref('liveETA').update({ status: 'arrived' });
+        }, 15 * 60 * 1000);
+      }
     } catch (err) {
       console.error("ETA broadcast failed", err);
     }
+  }, err => {
+    console.error("Geolocation failed", err);
   });
 }
+
+
+
 
 // Zet dit bovenaan je script, vóór gebruik in getUpcomingEvent
 function parseDateTime(dateStr, timeStr) {
