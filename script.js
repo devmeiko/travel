@@ -6,6 +6,8 @@ let progressInterval = null;
 let alreadyUploaded = false;
 let scheduleData = {};
 
+const SHEET_URL = "https://opensheet.elk.sh/1XbpOSyhPHeR7T8tbabsAhW61rMxBY60IKQihS2F75mE/Sheet1";
+
 async function getActiveJourney() {
   const snapshot = await db.ref('activeJourney').once('value');
   return snapshot.val();
@@ -17,8 +19,8 @@ function markActiveJourneyButton(btn) {
 }
 
 async function loadSchedule() {
-  const response = await fetch('data.json');
-  const data = await response.json();
+  const snapshot = await db.ref('scheduleData').once('value');
+  const data = snapshot.val();
   scheduleData = data;
   const scheduleContainer = document.getElementById('schedule');
   scheduleContainer.innerHTML = "";
@@ -48,9 +50,12 @@ async function loadSchedule() {
       const eTitle = document.createElement('p');
       eTitle.innerHTML = `<strong>${event.time}</strong> – ${event.title}`;
       eDiv.appendChild(eTitle);
+      
+      const [year, month, day] = date.split('-').map(Number);
+      const [hour, minute] = event.time.split(':').map(Number);
+      const eventDate = new Date(year, month - 1, day, hour, minute);
+      const plannedTimeStr = eventDate.toISOString(); // voor compatibiliteit in forecast functie
 
-      const plannedTimeStr = `${date}T${event.time}`;
-      const eventDate = new Date(plannedTimeStr);
       const now = new Date();
 
       const buttonWrapper = document.createElement('div');
@@ -117,7 +122,8 @@ async function showWeatherForecast(location, startTime, durationMinutes, contain
   const geoRes = await fetch(geocodeUrl);
   const geoData = await geoRes.json();
 
-  if (!geoData.length) return alert("Location not found.");
+  if (!geoData.length) return;
+  //if (!geoData.length) return alert("Location not found.");
   const { lat, lon } = geoData[0];
 
   // fetch forecast
@@ -139,7 +145,8 @@ async function showWeatherForecast(location, startTime, durationMinutes, contain
     return t >= new Date(start.getTime() - margin) && t <= new Date(end.getTime() + margin);
   });
 
-  if (!relevant.length) return alert("No forecast available for this timeframe.");
+  if (!relevant.length) return;
+  //if (!relevant.length) return alert("No forecast available for this timeframe.");
 
   // sunrise/sunset
   const sunrise = new Date(currentData.sys.sunrise * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -216,6 +223,7 @@ function updateProgressBar() {
 window.onload = () => {
   loadSchedule();
 
+  // Knop om device-rank op te slaan
   document.getElementById('saveDeviceRank').onclick = () => {
     const val = parseInt(document.getElementById('deviceRank').value);
     if (isNaN(val)) return alert("Enter a valid number.");
@@ -230,15 +238,27 @@ window.onload = () => {
     });
   };
 
+  // Rang opnieuw tonen als al opgeslagen
   const storedRank = localStorage.getItem('deviceRank');
   if (storedRank !== null) {
     document.getElementById('deviceRank').value = storedRank;
     document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${storedRank}`;
   }
 
-  syncAndShowETA(); // Live ETA handling
-};
+  // ETA-systeem starten
+  syncAndShowETA();
 
+  // 🔄 Refresh data knop
+  document.getElementById('refreshData').onclick = async () => {
+    await fetchAndSaveSpreadsheet();
+    await db.ref('lastRefresh').set(Date.now());
+  };
+
+  // 📡 Luister op Firebase om alle clients automatisch te syncen
+  db.ref('lastRefresh').on('value', () => {
+    loadSchedule(); // laad nieuwste data van Firebase
+  });
+};
 
 async function showETA(destination, plannedTimeStr, container) {
   if (!navigator.geolocation) {
@@ -390,7 +410,9 @@ function getUpcomingEvent() {
   const dates = Object.keys(scheduleData).sort(); // `scheduleData` moet globaal beschikbaar zijn
   for (const date of dates) {
     for (const event of scheduleData[date].events) {
-      const eventTime = new Date(`${date}T${event.time}`);
+      const [year, month, day] = date.split('-').map(Number);
+      const [hour, minute] = event.time.split(':').map(Number);
+      const eventTime = new Date(year, month - 1, day, hour, minute);
       if (eventTime > now) {
         return event;
       }
@@ -398,3 +420,48 @@ function getUpcomingEvent() {
   }
   return null;
 }
+
+async function fetchAndSaveSpreadsheet() {
+  try {
+    const res = await fetch(SHEET_URL);
+    const raw = await res.json();
+    console.log("📄 Spreadsheet data:", raw);
+
+    const structured = {};
+
+    for (const row of raw) {
+      const date = row["Date (YYYY-MM-DD)"];
+      const time = row["Time (HH:MM)"];
+      const title = row["Title"];
+
+      if (!date || !time || !title) continue;
+
+      if (!structured[date]) {
+        structured[date] = {
+          location: row["Location"] || row["Weather Location"] || "",
+          events: []
+        };
+      }
+
+      structured[date].events.push({
+        title: title,
+        time: time,
+        duration_minutes: parseInt(row["Duration (min)"] || "0"),
+        weather_location: row["Weather Location"] || "",
+        maps_link: row["Maps Link"] || "",
+        destination_coords: {
+          lat: parseFloat(row["Destination Lat"] || "0"),
+          lon: parseFloat(row["Destination Lon"] || "0")
+        }
+      });
+    }
+
+    console.log("✅ Structured data:", structured);
+    await db.ref('scheduleData').set(structured);
+    alert("✅ Schedule refreshed!");
+  } catch (err) {
+    console.error("❌ Refresh failed:", err);
+    alert("❌ Failed to refresh data.");
+  }
+}
+
