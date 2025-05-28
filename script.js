@@ -3,6 +3,7 @@ let etaInterval = null;
 let journeyStartTime = null;
 let journeyDuration = null; // in seconden
 let progressInterval = null;
+let alreadyUploaded = false;
 
 async function getActiveJourney() {
   const snapshot = await db.ref('activeJourney').once('value');
@@ -20,18 +21,17 @@ async function loadSchedule() {
   const scheduleContainer = document.getElementById('schedule');
   scheduleContainer.innerHTML = "";
 
-  const now = new Date();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // strip time
+  const todayStr = new Date().toISOString().split('T')[0];
 
   let nextEventTime = null;
 
   for (const date in data) {
-    const [y, m, d] = date.split('-');
-    const dateObj = new Date(y, m - 1, d);
-    if (dateObj < today) continue;
+    const dateOnlyStr = date;
+    if (dateOnlyStr < todayStr) continue;
 
+    const [y, m, d] = date.split('-');
     const day = data[date];
+
     const block = document.createElement('div');
     block.className = 'day-block';
 
@@ -39,19 +39,17 @@ async function loadSchedule() {
     heading.textContent = `${d}/${m}/${y} – ${day.location}`;
     block.appendChild(heading);
 
+    let hasEvents = false;
+
     for (const event of day.events) {
       const eDiv = document.createElement('div');
       const eTitle = document.createElement('p');
       eTitle.innerHTML = `<strong>${event.time}</strong> – ${event.title}`;
       eDiv.appendChild(eTitle);
 
-      // ───────────── SNIPPET #1 ────────────
-      // zet deze data-attribute zodat je later via JS kunt herkennen welk blok actief is
-      const journeyId = `${date}_${event.time.replace(':','-')}`;
-      eDiv.dataset.journeyId = journeyId;
-      // ──────────────────────────────────────
-
       const plannedTimeStr = `${date}T${event.time}`;
+      const eventDate = new Date(plannedTimeStr);
+      const now = new Date();
 
       const buttonWrapper = document.createElement('div');
       buttonWrapper.className = 'button-group';
@@ -63,34 +61,10 @@ async function loadSchedule() {
         buttonWrapper.appendChild(btnMap);
       }
 
-      if (event.destination_coords) {
-        const plannedTime = new Date(plannedTimeStr);
-
-        const timeDiffMin = (now - plannedTime) / 60000;
-        const isWithinStartWindow = timeDiffMin >= -10 && timeDiffMin <= 10;
-
-        if (isWithinStartWindow && !activeJourney) {
-          console.log("🔔 AUTO-TRIGGERED JOURNEY at", new Date().toLocaleTimeString(), "for", plannedTimeStr);
-          activeJourney = eDiv;
-          journeyStartTime = Date.now();
-        
-          document.getElementById('progressBar').style.width = '0%';
-          document.getElementById('progressContainer').style.display = 'block';
-        
-          async function updateETA() {
-            await showETA(event.destination_coords, plannedTimeStr, null);
-          }
-          updateETA();
-          etaInterval = setInterval(updateETA, 60000);
-        
-          clearInterval(progressInterval);
-          updateProgressBar();
-          progressInterval = setInterval(updateProgressBar, 1000);
-        }
-      }
-
       eDiv.appendChild(buttonWrapper);
+      block.appendChild(eDiv);
 
+      // Weather
       if (event.weather_location && event.duration_minutes) {
         showWeatherForecast(
           event.weather_location,
@@ -100,15 +74,16 @@ async function loadSchedule() {
         );
       }
 
-      const eventDate = new Date(plannedTimeStr);
       if (!nextEventTime || (eventDate > now && eventDate < nextEventTime)) {
         nextEventTime = eventDate;
       }
 
-      block.appendChild(eDiv);
+      hasEvents = true;
     }
 
-    scheduleContainer.appendChild(block);
+    if (hasEvents) {
+      scheduleContainer.appendChild(block);
+    }
   }
 
   if (nextEventTime) {
@@ -116,6 +91,8 @@ async function loadSchedule() {
     setInterval(() => updateCountdown(nextEventTime), 1000);
   }
 }
+
+
 
 function updateCountdown(targetTime) {
   const now = new Date();
@@ -309,3 +286,27 @@ document.getElementById('toggleHeader').onclick = () => {
     toggle.textContent = '▲';
   }
 };
+
+// 🔧 Device ID invoer
+document.getElementById('saveDeviceRank').onclick = () => {
+  const val = parseInt(document.getElementById('deviceRank').value);
+  if (isNaN(val)) return alert("Enter a valid number.");
+  localStorage.setItem('deviceRank', val);
+  document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${val}`;
+};
+
+// Bij herladen tonen
+const storedRank = localStorage.getItem('deviceRank');
+if (storedRank !== null) {
+  document.getElementById('deviceRank').value = storedRank;
+  document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${storedRank}`;
+}
+
+
+function deviceId() {
+  if (!localStorage.getItem('deviceId')) {
+    const id = 'dev_' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('deviceId', id);
+  }
+  return localStorage.getItem('deviceId');
+}
