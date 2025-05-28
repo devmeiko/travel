@@ -7,7 +7,11 @@
         "time": "09:45",
         "duration_minutes": 60,
         "weather_location": "Manchester",
-        "maps_link": "https://maps.google.com/?q=Manchester+Airport"
+        "maps_link": "https://maps.google.com/?q=Manchester+Airport",
+        "destination_coords": {
+          "lat": 53.3659,
+          "lon": -2.2726
+        }
       },
       {
         "title": "Rit naar Edinburgh",
@@ -15,10 +19,37 @@
         "duration_minutes": 240,
         "weather_location": "Edinburgh",
         "maps_link": "https://maps.google.com/?q=Edinburgh",
-          "destination_coords": {
-    "lat": 55.9533,
-    "lon": -3.1883
-  }
+        "destination_coords": {
+          "lat": 55.9533,
+          "lon": -3.1883
+        }
+      }
+    ]
+  },
+  "2025-06-01": {
+    "location": "Manchester & Edinburgh",
+    "events": [
+      {
+        "title": "Aankomst op Manchester Airport",
+        "time": "09:45",
+        "duration_minutes": 60,
+        "weather_location": "Manchester",
+        "maps_link": "https://maps.google.com/?q=Manchester+Airport",
+        "destination_coords": {
+          "lat": 53.3659,
+          "lon": -2.2726
+        }
+      },
+      {
+        "title": "Rit naar Edinburgh",
+        "time": "11:00",
+        "duration_minutes": 240,
+        "weather_location": "Edinburgh",
+        "maps_link": "https://maps.google.com/?q=Edinburgh",
+        "destination_coords": {
+          "lat": 55.9533,
+          "lon": -3.1883
+        }
       }
     ]
   }

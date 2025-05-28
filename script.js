@@ -81,12 +81,8 @@ async function loadSchedule() {
           document.querySelectorAll('.start-journey-btn').forEach(b=>b.style.display='none');
           btnStart.style.display = 'none';
 
-          const etaBox = document.createElement('div');
-          etaBox.className = 'eta-box';
-          eDiv.appendChild(etaBox);
-
           async function updateETA() {
-            await showETA(event.destination_coords, plannedTimeStr, etaBox);
+            await showETA(event.destination_coords, plannedTimeStr, null);
           }
           updateETA();
           etaInterval = setInterval(updateETA, 60000);
@@ -102,9 +98,6 @@ async function loadSchedule() {
             // stop alle intervals
             clearInterval(etaInterval);
             clearInterval(progressInterval);
-          
-            // haal de ETA-box weg
-            etaBox.remove();
           
             // reset progress-bar en countdown
             document.getElementById('progressContainer').style.display = 'none';
@@ -320,7 +313,7 @@ async function showETA(destination, plannedTimeStr, container) {
         : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
 
       const text = `🛰️ Estimated arrival: ${eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`;
-      container.textContent = text;
+      if (container) container.textContent = text;
       document.getElementById('eta').textContent = text;
 
       // Start of reset progress bar
