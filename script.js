@@ -64,68 +64,29 @@ async function loadSchedule() {
       }
 
       if (event.destination_coords) {
-        const btnStart = document.createElement('button');
-        btnStart.textContent = '▶ Start journey';
-        btnStart.classList.add('start-journey-btn');
-        btnStart.onclick = () => {
-          if (!confirm("Start this journey?")) return;
-          // ───────────── SNIPPET #2 ────────────
-          // wanneer je op Start klikt, bewaar je alleen je local state.
-          // Verwijder hier alle dbRef calls:
-          //    dbRef.set(...)
-          // en laat de rest ongewijzigd.
+        const plannedTime = new Date(plannedTimeStr);
+
+        const timeDiffMin = (now - plannedTime) / 60000;
+        const isWithinStartWindow = timeDiffMin >= -10 && timeDiffMin <= 10;
+
+        if (isWithinStartWindow && !activeJourney) {
+          console.log("🔔 AUTO-TRIGGERED JOURNEY at", new Date().toLocaleTimeString(), "for", plannedTimeStr);
           activeJourney = eDiv;
           journeyStartTime = Date.now();
+        
           document.getElementById('progressBar').style.width = '0%';
           document.getElementById('progressContainer').style.display = 'block';
-          document.querySelectorAll('.start-journey-btn').forEach(b=>b.style.display='none');
-          btnStart.style.display = 'none';
-
+        
           async function updateETA() {
             await showETA(event.destination_coords, plannedTimeStr, null);
           }
           updateETA();
           etaInterval = setInterval(updateETA, 60000);
-
-          // ... in loadSchedule, binnen if (event.destination_coords) …
-
-          const btnStop = document.createElement('button');
-          btnStop.textContent = '■ End journey';
-          btnStop.classList.add('end-journey-btn');
-          btnStop.onclick = () => {
-            if (!confirm("Stop this journey?")) return;
-          
-            // stop alle intervals
-            clearInterval(etaInterval);
-            clearInterval(progressInterval);
-          
-            // reset progress-bar en countdown
-            document.getElementById('progressContainer').style.display = 'none';
-            document.getElementById('progressBar').style.width = '0%';
-          
-            // toon de Start-knoppen terug
-            document.querySelectorAll('.start-journey-btn')
-              .forEach(b => b.style.display = 'inline-block');
-          
-            // reset de hoofd-ETA placeholder
-            document.getElementById('eta').textContent =
-              '🛰️ ETA will appear here once a journey is started.';
-          
-            // verwijder nu écht deze End-knop
-            btnStop.remove();
-          
-            // reset actieve reis
-            activeJourney = null;
-            journeyStartTime = null;
-            journeyDuration = null;
-            progressInterval = null;
-          };
-
-          buttonWrapper.appendChild(btnStop);
-
-          // ──────────────────────────────────────
-        };
-        buttonWrapper.appendChild(btnStart);
+        
+          clearInterval(progressInterval);
+          updateProgressBar();
+          progressInterval = setInterval(updateProgressBar, 1000);
+        }
       }
 
       eDiv.appendChild(buttonWrapper);

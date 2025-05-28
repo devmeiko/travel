@@ -1,5 +1,5 @@
 {
-  "2025-05-31": {
+  "2025-05-28": {
     "location": "Manchester & Edinburgh",
     "events": [
       {
@@ -15,7 +15,7 @@
       },
       {
         "title": "Rit naar Edinburgh",
-        "time": "11:00",
+        "time": "10:55",
         "duration_minutes": 240,
         "weather_location": "Edinburgh",
         "maps_link": "https://maps.google.com/?q=Edinburgh",
