@@ -68,6 +68,7 @@ async function loadSchedule() {
         btnStart.textContent = '▶ Start journey';
         btnStart.classList.add('start-journey-btn');
         btnStart.onclick = () => {
+          if (!confirm("Start this journey?")) return;
           // ───────────── SNIPPET #2 ────────────
           // wanneer je op Start klikt, bewaar je alleen je local state.
           // Verwijder hier alle dbRef calls:
@@ -90,18 +91,45 @@ async function loadSchedule() {
           updateETA();
           etaInterval = setInterval(updateETA, 60000);
 
+          // ... in loadSchedule, binnen if (event.destination_coords) …
+
           const btnStop = document.createElement('button');
           btnStop.textContent = '■ End journey';
+          btnStop.classList.add('end-journey-btn');
           btnStop.onclick = () => {
-            // idem, verwijder dbRef.remove()
+            if (!confirm("Stop this journey?")) return;
+          
+            // stop alle intervals
             clearInterval(etaInterval);
+            clearInterval(progressInterval);
+          
+            // haal de ETA-box weg
             etaBox.remove();
+          
+            // reset progress-bar en countdown
             document.getElementById('progressContainer').style.display = 'none';
             document.getElementById('progressBar').style.width = '0%';
-            document.querySelectorAll('.start-journey-btn').forEach(b=>b.style.display='inline-block');
+          
+            // toon de Start-knoppen terug
+            document.querySelectorAll('.start-journey-btn')
+              .forEach(b => b.style.display = 'inline-block');
+          
+            // reset de hoofd-ETA placeholder
+            document.getElementById('eta').textContent =
+              '🛰️ ETA will appear here once a journey is started.';
+          
+            // verwijder nu écht deze End-knop
+            btnStop.remove();
+          
+            // reset actieve reis
             activeJourney = null;
+            journeyStartTime = null;
+            journeyDuration = null;
+            progressInterval = null;
           };
+
           buttonWrapper.appendChild(btnStop);
+
           // ──────────────────────────────────────
         };
         buttonWrapper.appendChild(btnStart);
