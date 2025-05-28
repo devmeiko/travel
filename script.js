@@ -5,7 +5,6 @@ let journeyDuration = null; // in seconden
 let progressInterval = null;
 let alreadyUploaded = false;
 let scheduleData = {};
-const db = window.db;
 
 const SHEET_URL = "https://opensheet.elk.sh/1XbpOSyhPHeR7T8tbabsAhW61rMxBY60IKQihS2F75mE/Sheet1";
 
@@ -286,7 +285,7 @@ async function showETA(destination, plannedTimeStr, container) {
     const plannedTime = new Date(plannedTimeStr);
 
     try {
-      const res = await fetch(`/maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
+      const res = await fetch(`maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
       const data = await res.json();
 
       if (!data.routes || !data.routes.length) {
@@ -357,7 +356,7 @@ function syncAndShowETA() {
   const etaRef = db.ref("liveETA");
 
   // Sla lokale deviceRank op
-  allRanksRef.child(deviceId).set(rank);
+  allRanksRef.child(deviceId()).set(rank);
 
   // Haal hoogste rank op
   allRanksRef.once("value").then((snapshot) => {
@@ -388,7 +387,7 @@ function calculateETAAndBroadcast() {
   const activeEvent = getUpcomingEvent(); // Zelf schrijven: haalt eerstvolgende event met locatie
   if (!activeEvent) return;
 
-  const { destination_coords, time } = activeEvent;
+  const { destination_coords, time } = activeEvent.event;
   const plannedTimeStr = `${new Date().toISOString().split('T')[0]}T${time}`;
 
   navigator.geolocation.getCurrentPosition(async position => {
@@ -396,7 +395,7 @@ function calculateETAAndBroadcast() {
     const destinationStr = `${destination_coords.lat},${destination_coords.lon}`;
 
       try {
-        const res = await fetch(`/maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
+        const res = await fetch(`maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
         const data = await res.json();
       if (!data.routes || !data.routes.length) return;
 
@@ -416,12 +415,21 @@ function calculateETAAndBroadcast() {
   });
 }
 
+// Zet dit bovenaan je script, vóór gebruik in getUpcomingEvent
+function parseDateTime(dateStr, timeStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute]    = timeStr.split(':').map(Number);
+  return new Date(year, month - 1, day, hour, minute);
+}
+
+
 function getUpcomingEvent(maxHoursAhead = 3) {
   const now = new Date();
   const maxTime = new Date(now.getTime() + maxHoursAhead * 60 * 60 * 1000);
 
   for (const date of Object.keys(scheduleData).sort()) {
     for (const event of scheduleData[date].events) {
+      // ← Hier roept je parseDateTime aan, maar die bestaat niet
       const eventTime = parseDateTime(date, event.time);
       if (eventTime > now && eventTime <= maxTime) {
         return { date, event };
