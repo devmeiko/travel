@@ -57,23 +57,16 @@ h1 {
   font-weight: 500;
 }
 
-#countdowns, #eta {
+#countdowns, #currentActivity {
   background: white;
   padding: 1em;
   margin: 0.5em auto;
   max-width: 650px;
   border-radius: 12px;
   font-size: 1rem;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-}
-
-.day-block {
-  background: white;
-  margin: 1em auto;
-  padding: 1em 1.2em;
-  max-width: 680px;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(60,64,67,.15), 0 4px 8px rgba(60,64,67,.1);
+  box-shadow:
+  0 2px 4px rgba(0, 0, 0, 0.12),
+  0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 .day-block h2 {
@@ -137,12 +130,6 @@ button.start-journey-btn.active-journey {
   margin-bottom: 0.5em;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1em;
-  font-size: 0.85rem;
-}
 
 th, td {
   padding: 8px 10px;
@@ -186,4 +173,202 @@ thead {
   padding-top: 1em;
   max-width: 680px;
   margin: 0 auto;
+}
+
+/* ------------- Color & elevation tokens ------------- */
+:root {
+  --mdc-surface: #fff;
+  --mdc-on-surface: #202124;
+  --mdc-primary: #1a73e8;
+  --mdc-secondary-bg: #e8f0fe;
+  --mdc-divider: #e0e0e0;
+  --mdc-header-bg: #f1f3f4;
+  --mdc-shadow-1: 0 1px 3px rgba(60,64,67,0.15), 0 4px 8px rgba(60,64,67,0.10);
+  --border-radius: 16px;
+}
+
+/* ------------- Day card ------------- */
+.day-block {
+  background: var(--mdc-surface);
+  border-radius: var(--border-radius);
+  box-shadow: var(--mdc-shadow-1);
+  margin: 16px 0;
+  overflow: hidden;
+}
+
+.day-header {
+  background: var(--mdc-secondary-bg);
+  padding: 12px 16px;
+}
+
+.day-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--mdc-on-surface);
+}
+
+/* ------------- Events list ------------- */
+.events {
+  display: flex;
+  flex-direction: column;
+}
+
+.event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-top: 1px solid var(--mdc-divider);
+}
+
+.event:first-of-type {
+  border-top: none;
+}
+
+.event-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.event-time {
+  font-weight: 500;
+  color: var(--mdc-primary);
+}
+
+.event-title {
+  font-size: 0.95rem;
+  color: var(--mdc-on-surface);
+}
+
+/* Material-style outline button */
+.mdc-button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  border: 1px solid var(--mdc-primary);
+  border-radius: 4px;
+  background: none;
+  color: var(--mdc-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.mdc-button:hover {
+  background: rgba(26,115,232,0.08);
+}
+
+/* ------------- Tables ------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+
+thead th {
+  text-transform: uppercase;
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 12px;
+  background: var(--mdc-header-bg);
+  color: #5f6368;
+  border: none;
+}
+
+tbody tr {
+  border-bottom: 1px solid var(--mdc-divider);
+}
+
+tbody td {
+  padding: 12px;
+  border: none;
+  color: #3c4043;
+}
+
+tbody tr:hover {
+  background: rgba(26,115,232,0.04);
+}
+
+/* ======== Table Card Styling ======== */
+.table-container {
+  background: var(--mdc-surface);
+  border-radius: var(--border-radius);
+  box-shadow: var(--mdc-shadow-1);
+  margin: 1em 0;
+  overflow: auto;
+}
+
+/* Binnen in de container: */
+.table-container table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.table-container thead th {
+  text-transform: uppercase;
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 12px 16px;
+  background: var(--mdc-secondary-bg);
+  color: #5f6368;
+  border-bottom: 1px solid var(--mdc-divider);
+}
+
+.table-container tbody tr:nth-child(even) {
+  background: #f9f9f9;
+}
+
+.table-container tbody tr:hover {
+  background: rgba(26,115,232,0.04);
+}
+
+.table-container td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mdc-divider);
+  color: var(--mdc-on-surface);
+}
+
+/* ======== Bottom Nav “Pop-out” ======== */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0; right: 0;
+  height: 64px;
+  padding: 0 8px;
+  background: var(--mdc-surface);
+  /* Zwaardere, hogere schaduw */
+  box-shadow:
+    0 -2px 4px rgba(0, 0, 0, 0.08),
+    0 -6px 16px rgba(0, 0, 0, 0.12);
+  /* extra top-border voor visuele scheiding */
+  border-top: 1px solid var(--mdc-divider);
+  /* ronde hoeken bovenaan */
+  border-top-left-radius: var(--border-radius);
+  border-top-right-radius: var(--border-radius);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 1000;
+}
+
+.bottom-nav button {
+  all: unset;
+  flex: 1;
+  text-align: center;
+  cursor: pointer;
+  padding: 8px 0;
+  border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
+.bottom-nav button:hover {
+  background: rgba(26,115,232,0.08);
 }

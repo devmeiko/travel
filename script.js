@@ -17,92 +17,111 @@ function markActiveJourneyButton(btn) {
 
 async function loadSchedule() {
   const snapshot = await db.ref('scheduleData').once('value');
-  const data = snapshot.val();
-  scheduleData = data;
+  const data     = snapshot.val();
+  scheduleData   = data;
+
   const scheduleContainer = document.getElementById('homePage');
-  scheduleContainer.innerHTML = "";
+  scheduleContainer.innerHTML = "";  // clear out old
 
   const todayStr = new Date().toISOString().split('T')[0];
-
   let nextEventTime = null;
 
-  for (const date in data) {
-    const dateOnlyStr = date;
-    if (dateOnlyStr < todayStr) continue;
+  for (const dateStr in data) {
+    if (dateStr < todayStr) continue;
+    const dayData = data[dateStr];
+    const [Y, M, D] = dateStr.split('-').map(Number);
 
-    const [y, m, d] = date.split('-');
-    const day = data[date];
+    // ——— Day Card ———
+    const dayBlock = document.createElement('div');
+    dayBlock.className = 'day-block';
 
-    const block = document.createElement('div');
-    block.className = 'day-block';
+    // Day header with colored background
+    const dayHeader = document.createElement('div');
+    dayHeader.className = 'day-header';
+    const h2 = document.createElement('h2');
+    h2.textContent = `${String(D).padStart(2,'0')}/${String(M).padStart(2,'0')}/${Y} – ${dayData.location}`;
+    dayHeader.appendChild(h2);
+    dayBlock.appendChild(dayHeader);
 
-    const heading = document.createElement('h2');
-    heading.textContent = `${d}/${m}/${y} – ${day.location}`;
-    block.appendChild(heading);
+    // Container for all events that day
+    const eventsContainer = document.createElement('div');
+    eventsContainer.className = 'events';
 
-    let hasEvents = false;
+    // ——— Each Event ———
+    for (const evt of dayData.events) {
+      const evtDiv = document.createElement('div');
+      evtDiv.className = 'event';
 
-    for (const event of day.events) {
-      const eDiv = document.createElement('div');
-      const eTitle = document.createElement('p');
-      eTitle.innerHTML = `<strong>${event.time}</strong> – ${event.title}`;
-      eDiv.appendChild(eTitle);
-      
-      const [year, month, day] = date.split('-').map(Number);
-      const [hour, minute] = event.time.split(':').map(Number);
-      const eventDate = new Date(year, month - 1, day, hour, minute);
-      const plannedTimeStr = eventDate.toISOString(); // voor compatibiliteit in forecast functie
+      // Event info (time + title)
+      const info = document.createElement('div');
+      info.className = 'event-info';
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'event-time';
+      timeSpan.textContent = evt.time;
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'event-title';
+      titleSpan.textContent = evt.title;
+      info.append(timeSpan, titleSpan);
 
-      const now = new Date();
-
-      const buttonWrapper = document.createElement('div');
-      buttonWrapper.className = 'button-group';
-
-      if (event.maps_link) {
-        const btnMap = document.createElement('button');
-        btnMap.textContent = 'Open route';
-        btnMap.onclick = () => window.open(event.maps_link, '_blank');
-        buttonWrapper.appendChild(btnMap);
+      // Event actions (button group)
+      const actions = document.createElement('div');
+      actions.className = 'event-actions';
+      if (evt.maps_link) {
+        const btn = document.createElement('button');
+        btn.className = 'mdc-button mdc-button--outlined';
+        btn.onclick = () => window.open(evt.maps_link, '_blank');
+        // icon
+        const ico = document.createElement('i');
+        ico.className = 'material-icons mdc-button__icon';
+        ico.textContent = 'map';
+        // label
+        const lbl = document.createElement('span');
+        lbl.className = 'mdc-button__label';
+        lbl.textContent = 'Open route';
+        btn.append(ico, lbl);
+        actions.appendChild(btn);
       }
 
-      eDiv.appendChild(buttonWrapper);
-      block.appendChild(eDiv);
+      // assemble event row
+      evtDiv.append(info, actions);
 
-      // Weather
-      if (event.weather_location && event.duration_minutes) {
+      // — Weather forecast injected below the row
+      if (evt.weather_location && evt.duration_minutes) {
+        // showWeatherForecast(container=`evtDiv`) will append the table
         showWeatherForecast(
-          event.weather_location,
-          plannedTimeStr,
-          event.duration_minutes,
-          eDiv
+          evt.weather_location,
+          new Date(Y, M-1, D, ...evt.time.split(':').map(Number)).toISOString(),
+          evt.duration_minutes,
+          evtDiv
         );
       }
 
-      if (!nextEventTime || (eventDate > now && eventDate < nextEventTime)) {
-        nextEventTime = eventDate;
+      // track nextEventTime for countdown
+      const [hh, mm] = evt.time.split(':').map(Number);
+      const evDate = new Date(Y, M-1, D, hh, mm);
+      const now    = new Date();
+      if ((!nextEventTime || (evDate > now && evDate < nextEventTime))) {
+        nextEventTime = evDate;
       }
 
-      hasEvents = true;
+      eventsContainer.appendChild(evtDiv);
     }
 
-    if (hasEvents) {
-      scheduleContainer.appendChild(block);
+    // only append days with events
+    if (eventsContainer.children.length) {
+      dayBlock.appendChild(eventsContainer);
+      scheduleContainer.appendChild(dayBlock);
     }
   }
 
-  // 🗑️ kill oude countdown
+  // re-start countdown
   if (countdownInterval) clearInterval(countdownInterval);
-
   if (nextEventTime) {
-    // 1× meteen updaten
     updateCountdown(nextEventTime);
-    // elke seconde updaten, en handler onthouden
-    countdownInterval = setInterval(
-      () => updateCountdown(nextEventTime),
-      1000
-    );
+    countdownInterval = setInterval(() => updateCountdown(nextEventTime), 1000);
   }
 }
+
 
 
 
@@ -120,6 +139,36 @@ function updateCountdown(targetTime) {
   const mins = Math.floor((diff / 1000 / 60) % 60);
   const secs = Math.floor((diff / 1000) % 60);
   countdownDiv.textContent = `⏳ Time until next activity: ${hrs}h ${mins}m ${secs}s`;
+}
+
+/**
+ * Bepaalt of er nu een event loopt (op basis van starttijd + duration_minutes)
+ * en schrijft dat in #currentActivity.
+ */
+function updateCurrentActivity() {
+  const now = new Date();
+  let currentEvt = null;
+
+  for (const dateStr of Object.keys(scheduleData).sort()) {
+    for (const evt of scheduleData[dateStr].events) {
+      const start = parseDateTime(dateStr, evt.time);             // :contentReference[oaicite:1]{index=1}
+      const end   = new Date(start.getTime() + evt.duration_minutes * 60000);
+      if (start <= now && now < end) {
+        currentEvt = { dateStr, evt };
+        break;
+      }
+    }
+    if (currentEvt) break;
+  }
+
+  const el = document.getElementById('currentActivity');
+  if (currentEvt) {
+    const { evt, dateStr } = currentEvt;
+    // toon alleen titel en tijd; datum kun je weglaten in header
+    el.textContent = `🎯 Current activity: ${evt.title} at ${evt.time}`;
+  } else {
+    el.textContent = `🎯 No current activity`;
+  }
 }
 
 async function showWeatherForecast(location, startTime, durationMinutes, container) {
@@ -212,7 +261,11 @@ async function showWeatherForecast(location, startTime, durationMinutes, contain
   }
 
   table.appendChild(tbody);
-  wrapper.appendChild(table);
+    // … na het vullen van `table`
+    const tableWrapper = document.createElement('div');
+    tableWrapper.className = 'table-container';
+    tableWrapper.appendChild(table);
+    wrapper.appendChild(tableWrapper);
   container.appendChild(wrapper);
 }
 
@@ -237,6 +290,9 @@ window.switchPage = switchPage;
 window.onload = async () => {
   // 1) eerst het schema écht laden
   await loadSchedule();
+  // Na countdown gestart te hebben:
+  updateCurrentActivity();
+  setInterval(updateCurrentActivity, 1000);
 
   // 3) rest van je onload blijft ongewijzigd
   // Knop om device-rank op te slaan
