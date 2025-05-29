@@ -1,11 +1,7 @@
 let activeJourney = null;
-let etaInterval = null;
-let journeyStartTime = null;
-let journeyDuration = null; // in seconden
-let progressInterval = null;
 let alreadyUploaded = false;
 let scheduleData = {};
-let arrivalTimer = null;
+let countdownInterval = null;
 
 const SHEET_URL = "https://opensheet.elk.sh/1XbpOSyhPHeR7T8tbabsAhW61rMxBY60IKQihS2F75mE/Sheet1";
 
@@ -94,9 +90,17 @@ async function loadSchedule() {
     }
   }
 
+  // 🗑️ kill oude countdown
+  if (countdownInterval) clearInterval(countdownInterval);
+
   if (nextEventTime) {
+    // 1× meteen updaten
     updateCountdown(nextEventTime);
-    setInterval(() => updateCountdown(nextEventTime), 1000);
+    // elke seconde updaten, en handler onthouden
+    countdownInterval = setInterval(
+      () => updateCountdown(nextEventTime),
+      1000
+    );
   }
 }
 
@@ -230,9 +234,11 @@ function switchPage(id) {
 
 window.switchPage = switchPage;
 
-window.onload = () => {
-  loadSchedule();
+window.onload = async () => {
+  // 1) eerst het schema écht laden
+  await loadSchedule();
 
+  // 3) rest van je onload blijft ongewijzigd
   // Knop om device-rank op te slaan
   document.getElementById('saveDeviceRank').onclick = () => {
     const val = parseInt(document.getElementById('deviceRank').value);
@@ -255,83 +261,24 @@ window.onload = () => {
     document.getElementById('currentRank').textContent = `✅ Your device rank is set to ${storedRank}`;
   }
 
-  // ETA-systeem starten
-  syncAndShowETA();
-
   // 🔄 Refresh data knop
   document.getElementById('refreshData').onclick = async () => {
+    // 1) nieuwe spreadsheet halen en opslaan
     await fetchAndSaveSpreadsheet();
+    // 2) trigger alle clients om te updaten
     await db.ref('lastRefresh').set(Date.now());
-  };
-
-  // 🚫 Handler voor Cancel ETA-knop
-  document.getElementById('cancelETA').onclick = () => {
-    clearTimeout(arrivalTimer);
-    // Zet liveETA status op 'canceled'
-    db.ref('liveETA').set({ status: 'canceled' });
+    // 3) lokaal direct herladen van schema & countdown
+    await loadSchedule();
   };
 
   // 📡 Luister op Firebase om alle clients automatisch te syncen
-  db.ref('lastRefresh').on('value', () => {
-    loadSchedule(); // laad nieuwste data van Firebase
+  db.ref('lastRefresh').on('value', async () => {
+    await loadSchedule();    // laad nieuwste data van Firebase
   });
 
-    switchPage('homePage'); // standaard home tonen
-    startNotesSync();       // notes starten
+  switchPage('homePage');
+  startNotesSync();
 };
-
-async function showETA(destination, plannedTimeStr, container) {
-  if (!navigator.geolocation) {
-    container.textContent = "ETA unavailable: GPS not supported.";
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(async position => {
-    const { latitude, longitude } = position.coords;
-    const origin = `${latitude},${longitude}`;
-    const destinationStr = `${destination.lat},${destination.lon}`;
-    const plannedTime = new Date(plannedTimeStr);
-    const diffMin = Math.round((eta - plannedTime) / 60000);
-
-    try {
-      const res = await fetch(`maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationStr)}`);
-      const data = await res.json();
-
-      if (!data.routes || !data.routes.length) {
-        container.textContent = "ETA unavailable: no route.";
-        return;
-      }
-
-      const leg = data.routes[0].legs[0];
-      const durationSec = leg.duration.value;
-      journeyDuration = durationSec; // nodig voor progress bar
-      const eta = new Date(Date.now() + durationSec * 1000);
-
-      const label = diffMin === 0
-        ? "on time"
-        : (diffMin > 0 ? `${diffMin} min late` : `${Math.abs(diffMin)} min early`);
-
-      const text = `🛰️ Estimated arrival: ${eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${label})`;
-      if (container) container.textContent = text;
-      document.getElementById('eta').textContent = text;
-
-      // Start of reset progress bar
-      journeyStartTime = Date.now();
-      document.getElementById('progressBar').style.width = '0%';
-      document.getElementById('progressContainer').style.display = 'block';
-
-      clearInterval(progressInterval);
-      updateProgressBar(); // meteen één keer updaten
-      progressInterval = setInterval(updateProgressBar, 1000); // elke seconde bijwerken
-
-    } catch (err) {
-      console.error(err);
-      container.textContent = "ETA error.";
-    }
-  }, () => {
-    container.textContent = "GPS denied.";
-  });
-}
 
 document.getElementById('toggleHeader').onclick = () => {
   const header = document.getElementById('mainHeader');
@@ -355,125 +302,6 @@ function deviceId() {
   }
   return localStorage.getItem('deviceId');
 }
-
-function syncAndShowETA() {
-  if (!scheduleData) return;
-
-  const rank = parseInt(localStorage.getItem("deviceRank") || "0");
-  const allRanksRef = db.ref("ranks");
-  const etaRef = db.ref("liveETA");
-
-  // Sla lokale deviceRank op
-  allRanksRef.child(deviceId()).set(rank);
-
-  // Haal hoogste rank op
-  allRanksRef.once("value").then((snapshot) => {
-    const ranks = snapshot.val() || {};
-    const maxRank = Math.max(...Object.values(ranks));
-
-    if (rank === maxRank) {
-      // Enkel hoogste toestel berekent de ETA
-      calculateETAAndBroadcast();
-    }
-  });
-
-  // Alle toestellen luisteren
-  etaRef.off(); // voorkom dubbele listeners
-  etaRef.on("value", (snapshot) => {
-    const etaObj = snapshot.val();
-    const etaDisplay = document.getElementById("eta");
-  
-    // ⏭️ Bij ‘canceled’ meteen door naar volgende ETA
-    if (etaObj && etaObj.status === 'canceled') {
-      clearTimeout(arrivalTimer);
-      // start opnieuw met het volgende event (indien binnen afstand)
-      calculateETAAndBroadcast();
-      return;
-    }
-  
-    // Gearriveerd via timer
-    if (etaObj && etaObj.status === 'arrived') {
-      etaDisplay.textContent = "📍 You've arrived at your destination.";
-      return;
-    }
-  
-    // Normale ETA-weergave
-    if (!etaObj || !etaObj.time || !etaObj.eventName) {
-      etaDisplay.textContent = "⚠️ No ETA scheduled – upcoming event is too far away.";
-    } else {
-      etaDisplay.textContent = `🛰️ ETA for "${etaObj.eventName}": ${etaObj.time}`;
-    }
-  });  
-}
-
-function calculateETAAndBroadcast() {
-  const activeEvent = getUpcomingEvent(); 
-  if (!activeEvent) return;
-
-  // haal event zelf uit activeEvent
-  const { event } = activeEvent;
-  // en haal de velden uit event
-  const { destination_coords, time } = event;
-  // time is bijvoorbeeld "10:15"
-  const [planHour, planMin] = time.split(':').map(Number);
-
-  navigator.geolocation.getCurrentPosition(async position => {
-    try {
-      // 1) huidige locatie en bestemming
-      const origin      = `${position.coords.latitude},${position.coords.longitude}`;
-      const destination = `${destination_coords.lat},${destination_coords.lon}`;  // nu gedefinieerd
-
-      // 2) vraag ETA op
-      const res  = await fetch(
-        `maps-proxy.php?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`
-      );
-      const data = await res.json();
-      if (!data.routes?.length) return;
-
-      // 3) bereken ETA en geplande tijd
-      const etaSec      = data.routes[0].legs[0].duration.value;
-      const etaDate     = new Date(Date.now() + etaSec * 1000);
-      const now         = new Date();
-      const plannedDate = new Date(
-        now.getFullYear(), now.getMonth(), now.getDate(),
-        planHour, planMin, 0, 0
-      );
-
-      // 4) diff & label
-      const diffMin = Math.round((etaDate - plannedDate) / 60000);
-      const label   = diffMin === 0
-        ? "on time"
-        : (diffMin > 0
-            ? `${diffMin} min late`
-            : `${Math.abs(diffMin)} min early`);
-
-      // 5) update Firebase & UI
-      const etaTimeStr = etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      await db.ref('liveETA').set({
-        time:      etaTimeStr,
-        eventName: event.title,
-        status:    'active'
-      });
-      document.getElementById('eta').textContent =
-        `🛰️ Estimated arrival: ${etaTimeStr} (${label})`;
-
-      // 6) optioneel: markeer “arrived” na 15 min als je binnen 10 min bent
-      if (diffMin <= 10) {
-        clearTimeout(arrivalTimer);
-        arrivalTimer = setTimeout(() => {
-          db.ref('liveETA').update({ status: 'arrived' });
-        }, 15 * 60 * 1000);
-      }
-    } catch (err) {
-      console.error("ETA broadcast failed", err);
-    }
-  }, err => {
-    console.error("Geolocation failed", err);
-  });
-}
-
-
-
 
 // Zet dit bovenaan je script, vóór gebruik in getUpcomingEvent
 function parseDateTime(dateStr, timeStr) {
@@ -569,9 +397,19 @@ function startNotesSync() {
 function switchPage(pageId) {
   const pages = ['homePage', 'notesPage', 'optionsPage'];
   pages.forEach(id => {
-    const page = document.getElementById(id);
-    if (page) {
-      page.style.display = (id === pageId) ? 'block' : 'none';
-    }
+    document.getElementById(id).style.display = (id === pageId) ? 'block' : 'none';
+  });
+
+  if (pageId === 'notesPage') {
+    refreshNotes();
+  }
+}
+
+function refreshNotes() {
+  const textarea = document.getElementById('globalNotes');
+  const status   = document.getElementById('notesSavedStatus');
+  db.ref('globalNotes').once('value').then(snapshot => {
+    textarea.value = snapshot.val() || '';
+    status.textContent = '';   // wis de “Notes saved at …” melding
   });
 }
